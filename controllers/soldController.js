@@ -28,6 +28,7 @@
 //   }
 // }
 import Sold from "../models/soldModel.js";
+import Invoice from "../models/Invoice.js";
 import Inventory from "../models/inventoryModel.js";
 
 /* =========================
@@ -82,6 +83,7 @@ export async function getSoldById(req, res, next) {
 /* =========================
    RECORD SALE
 ========================= */
+
 export async function recordSale(req, res, next) {
   try {
     const { inventoryId, price, currency, soldDate, buyer } = req.body;
@@ -102,7 +104,6 @@ export async function recordSale(req, res, next) {
       });
     }
 
-    // ❌ BLOCK RESELL
     if (inventory.status === "sold") {
       return res.status(400).json({
         success: false,
@@ -110,7 +111,6 @@ export async function recordSale(req, res, next) {
       });
     }
 
-    // ❌ ONLY APPROVED CAN BE SOLD
     if (inventory.status !== "approved") {
       return res.status(400).json({
         success: false,
@@ -118,7 +118,6 @@ export async function recordSale(req, res, next) {
       });
     }
 
-    // ❌ DOUBLE SAFETY — Sold collection check
     const alreadySold = await Sold.findOne({
       inventoryItem: inventory._id,
     });
@@ -130,12 +129,12 @@ export async function recordSale(req, res, next) {
       });
     }
 
-    // ✅ UPDATE INVENTORY
+    /* ---------- UPDATE INVENTORY ---------- */
     inventory.status = "sold";
     await inventory.save();
 
-    // ✅ CREATE SOLD ENTRY
-    const created = await Sold.create({
+    /* ---------- CREATE SOLD (ONLY ONCE) ---------- */
+    const sold = await Sold.create({
       inventoryItem: inventory._id,
       price,
       currency,
@@ -143,9 +142,19 @@ export async function recordSale(req, res, next) {
       buyer,
     });
 
+    /* ---------- CREATE INVOICE ---------- */
+    await Invoice.create({
+      soldItem: sold._id,
+      invoiceNumber: `INV-${Date.now()}`,
+      buyer,
+      currency,
+      amount: price,
+    });
+
+    /* ---------- RESPONSE ---------- */
     res.status(201).json({
       success: true,
-      data: created,
+      data: sold,
     });
   } catch (err) {
     console.error("Record sale error:", err);
@@ -162,7 +171,10 @@ export async function undoSold(req, res, next) {
 
     const sold = await Sold.findById(id);
     if (!sold) {
-      return res.status(404).json({ message: "Sold item not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Sold item not found",
+      });
     }
 
     // revert inventory
@@ -170,6 +182,10 @@ export async function undoSold(req, res, next) {
       status: "approved",
     });
 
+    // delete invoice
+    await Invoice.findOneAndDelete({ soldItem: sold._id });
+
+    // delete sold record
     await sold.deleteOne();
 
     res.json({ success: true });
@@ -235,6 +251,14 @@ export async function updateSold(req, res, next) {
     sold.buyer = buyer;
 
     await sold.save();
+
+    await Invoice.findOneAndUpdate(
+      { soldItem: sold._id },
+      {
+        amount: price,
+        buyer,
+      }
+    );
 
     res.json({
       success: true,

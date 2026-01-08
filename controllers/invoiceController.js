@@ -1,6 +1,83 @@
 import Inventory from "../models/inventoryModel.js";
 import Packaging from "../models/Packaging.js";
 import Invoice from "../models/Invoice.js";
+import Sold from "../models/soldModel.js";
+import { generateInvoicePDF } from "../utils/pdfService.js";
+
+export const downloadInvoicePDF = async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id).populate({
+    path: "soldItem",
+    populate: {
+      path: "inventoryItem",
+      populate: { path: "category" },
+    },
+  });
+
+  if (!invoice) {
+    return res.status(404).json({ message: "Invoice not found" });
+  }
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=${invoice.invoiceNumber}.pdf`
+  );
+
+  const doc = generateInvoicePDF(invoice);
+  doc.pipe(res);
+  doc.end();
+};
+
+// export const getInvoiceBySold = async (req, res) => {
+//   const invoice = await Invoice.findOne({
+//     soldItem: req.params.soldId,
+//   }).populate({
+//     path: "soldItem",
+//     populate: {
+//       path: "inventoryItem",
+//       populate: { path: "category" },
+//     },
+//   });
+
+//   if (!invoice) {
+//     return res.status(404).json({ message: "Invoice not found" });
+//   }
+
+//   res.json(invoice);
+// };
+export const getInvoiceBySold = async (req, res) => {
+  const soldDoc = await Sold.findById(req.params.soldId).populate({
+    path: "inventoryItem",
+    populate: { path: "category" },
+  });
+
+  if (!soldDoc) {
+    return res.status(404).json({ message: "Sold item not found" });
+  }
+
+  let invoice = await Invoice.findOne({ soldItem: soldDoc._id });
+
+  // 🔥 auto-create invoice if missing
+  if (!invoice) {
+    invoice = await Invoice.create({
+      soldItem: soldDoc._id,
+      invoiceNumber: `INV-${Date.now()}`,
+      buyer: soldDoc.buyer,
+      currency: soldDoc.currency,
+      amount: soldDoc.price,
+    });
+  }
+
+  const populatedInvoice = await Invoice.findById(invoice._id).populate({
+    path: "soldItem",
+    populate: {
+      path: "inventoryItem",
+      populate: { path: "category" },
+    },
+  });
+
+  res.json(populatedInvoice);
+};
 
 
 export const generateInvoice = async (req, res) => {

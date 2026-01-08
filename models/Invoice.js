@@ -42,7 +42,8 @@ const invoiceSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Sold",
       required: true,
-      unique: true, // one invoice per sale
+      unique: true, // ✅ 1 invoice per sold
+      index: true,
     },
 
     invoiceNumber: {
@@ -53,14 +54,10 @@ const invoiceSchema = new mongoose.Schema(
 
     invoiceDate: {
       type: Date,
-      required: true,
       default: Date.now,
     },
 
-    buyer: {
-      type: String,
-      trim: true,
-    },
+    buyer: String,
 
     currency: {
       type: String,
@@ -76,5 +73,5 @@ const invoiceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Invoice = mongoose.model("Invoice", invoiceSchema);
-export default Invoice;
+export default mongoose.model("Invoice", invoiceSchema);
+

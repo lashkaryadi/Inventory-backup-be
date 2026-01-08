@@ -53,16 +53,20 @@ const soldSchema = new mongoose.Schema(
   },
   {
     timestamps: true, // createdAt, updatedAt
-  }
-);
+  });
+  soldSchema.set("toJSON", {
+  transform: (_, ret) => {
+    ret.id = ret._id;
+    delete ret._id;
+    delete ret.__v;
+  },
+})
 
 /* =========================
    INDEXES (IMPORTANT)
 ========================= */
 
 // Sort by recent sales
-soldSchema.index({ createdAt: -1 });
 
-const Sold = mongoose.model("Sold", soldSchema);
 
-export default Sold;
+export default mongoose.model("Sold", soldSchema);
