@@ -52,9 +52,142 @@
 //   }
 // }
 
-import Inventory from "../models/inventoryModel.js";
 import Sold from "../models/soldModel.js";
 import Invoice from "../models/Invoice.js";
+import multer from "multer";
+import Inventory from "../models/inventoryModel.js";
+import { parseExcel, generateExcel } from "../utils/excel.js";
+
+const upload = multer({ storage: multer.memoryStorage() });
+export const importMiddleware = upload.single("file");
+
+export const previewInventoryExcel = async (req, res) => {
+  try {
+    const rows = parseExcel(req.file.buffer);
+
+    const preview = [];
+
+    for (const row of rows) {
+      const exists = await Inventory.findOne({
+        serialNumber: row.serialNumber,
+      });
+
+      preview.push({
+        ...row,
+        isDuplicate: !!exists,
+        isValid:
+          row.serialNumber &&
+          row.category &&
+          row.pieces &&
+          row.weight &&
+          row.purchaseCode &&
+          row.saleCode,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: preview,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to preview excel",
+    });
+  }
+};
+
+export const bulkUpdateInventory = async (req, res) => {
+  const { ids, updates } = req.body;
+
+  if (!ids?.length || !updates) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid bulk update payload",
+    });
+  }
+
+  await Inventory.updateMany(
+    { _id: { $in: ids } },
+    { $set: updates }
+  );
+
+  res.json({
+    success: true,
+    message: "Bulk update successful",
+  });
+};
+
+export const importInventoryFromExcel = async (req, res) => {
+  try {
+    const rows = parseExcel(req.file.buffer);
+
+    let inserted = 0;
+    let skipped = 0;
+    let errors = [];
+
+    for (const row of rows) {
+      if (!row.serialNumber || !row.category) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        await Inventory.create({
+          serialNumber: row.serialNumber,
+          category: row.category,
+          pieces: row.pieces,
+          weight: row.weight,
+          weightUnit: row.weightUnit,
+          purchaseCode: row.purchaseCode,
+          saleCode: row.saleCode,
+          status: row.status || "pending",
+        });
+        inserted++;
+      } catch (err) {
+        if (err.code === 11000) {
+          skipped++;
+        } else {
+          errors.push({ row, error: err.message });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      inserted,
+      skipped,
+      errors,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Import failed" });
+  }
+};
+
+export const exportInventoryToExcel = async (req, res) => {
+  const inventory = await Inventory.find().populate("category");
+
+  const data = inventory.map((i) => ({
+    serialNumber: i.serialNumber,
+    category: i.category?.name,
+    pieces: i.pieces,
+    weight: i.weight,
+    weightUnit: i.weightUnit,
+    purchaseCode: i.purchaseCode,
+    saleCode: i.saleCode,
+    status: i.status,
+  }));
+
+  const file = generateExcel(data);
+
+  res.setHeader("Content-Disposition", "attachment; filename=inventory.xlsx");
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+
+  res.send(file);
+};
 
 /* GET ALL */
 export const getInventory = async (req, res) => {
@@ -116,8 +249,6 @@ export const createInventoryItem = async (req, res, next) => {
   }
 };
 
-
-
 /* UPDATE */
 // export const updateInventoryItem = async (req, res) => {
 //   const item = await Inventory.findByIdAndUpdate(
@@ -136,14 +267,10 @@ export const updateInventoryItem = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const updated = await Inventory.findByIdAndUpdate(
-      id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+    const updated = await Inventory.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true,
+    });
 
     if (!updated) {
       return res.status(404).json({
@@ -174,7 +301,6 @@ export const updateInventoryItem = async (req, res) => {
     });
   }
 };
-
 
 /* DELETE */
 export async function deleteInventoryItem(req, res, next) {

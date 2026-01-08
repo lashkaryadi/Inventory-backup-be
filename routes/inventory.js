@@ -4,7 +4,7 @@
 //   createItem,
 //   updateItem,
 //   deleteItem,
-  
+
 // } from "../controllers/inventoryController.js";
 
 // import { protect } from "../middleware/authMiddleware.js";
@@ -24,7 +24,12 @@ import {
   createInventoryItem,
   updateInventoryItem,
   deleteInventoryItem,
+  importInventoryFromExcel,
+  exportInventoryToExcel,
+  importMiddleware,
+  bulkUpdateInventory,
 } from "../controllers/inventoryController.js";
+import { previewInventoryExcel } from "../controllers/inventoryController.js";
 
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -34,5 +39,12 @@ router.get("/", protect, getInventory);
 router.post("/", protect, createInventoryItem);
 router.put("/:id", protect, updateInventoryItem);
 router.delete("/:id", protect, deleteInventoryItem);
+router.post("/import", protect, importMiddleware, importInventoryFromExcel);
+router.get("/export", protect, exportInventoryToExcel);
+router.post("/import/preview", protect, importMiddleware, previewInventoryExcel);
+router.post("/import/confirm", protect, importInventoryFromExcel);
+
+router.put("/bulk-update", protect, bulkUpdateInventory);
+
 
 export default router;
