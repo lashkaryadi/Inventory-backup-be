@@ -14,6 +14,8 @@ import {
   getAllSold,
   getSoldById,
   recordSale,
+  undoSold,
+  updateSold,
 } from "../controllers/soldController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -22,5 +24,6 @@ const router = express.Router();
 router.get("/", protect, getAllSold);
 router.get("/:id", protect, getSoldById);
 router.post("/", protect, recordSale);
-
+router.delete("/:id/undo", protect, undoSold);
+router.put("/:id", protect, updateSold);
 export default router;

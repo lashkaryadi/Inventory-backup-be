@@ -41,27 +41,33 @@ export async function getAllSold(req, res, next) {
         populate: { path: "category" },
       })
       .sort({ createdAt: -1 });
-
+    const mapped = sold.map((s) => ({
+      id: s._id, // ✅ IMPORTANT
+      inventoryItem: s.inventoryItem,
+      price: s.price,
+      currency: s.currency,
+      buyer: s.buyer,
+      soldDate: s.soldDate,
+      createdAt: s.createdAt,
+    }));
     res.json({
       success: true,
-      data: sold,
+      data: mapped,
     });
   } catch (err) {
     next(err);
   }
 }
 
-
 /* =========================
    GET SOLD BY ID
 ========================= */
 export async function getSoldById(req, res, next) {
   try {
-    const record = await Sold.findById(req.params.id)
-      .populate({
-        path: "inventoryItem",
-        populate: { path: "category" },
-      });
+    const record = await Sold.findById(req.params.id).populate({
+      path: "inventoryItem",
+      populate: { path: "category" },
+    });
 
     if (!record) {
       return res.status(404).json({ message: "Record not found" });
@@ -146,6 +152,132 @@ export async function recordSale(req, res, next) {
     next(err);
   }
 }
+/* =========================
+   UNDO SOLD → BACK TO INVENTORY
+========================= */
+
+export async function undoSold(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const sold = await Sold.findById(id);
+    if (!sold) {
+      return res.status(404).json({ message: "Sold item not found" });
+    }
+
+    // revert inventory
+    await Inventory.findByIdAndUpdate(sold.inventoryItem, {
+      status: "approved",
+    });
+
+    await sold.deleteOne();
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// export async function undoSold(req, res, next) {
+//   try {
+//     const { id } = req.params;
+
+//     // 🔍 find sold record
+//     const sold = await Sold.findById(id);
+
+//     if (!sold) {
+//       return res.status(404).json({
+//         message: "Sold record not found",
+//       });
+//     }
+
+//     // 🔍 find inventory
+//     const inventory = await Inventory.findById(sold.inventoryItem);
+
+//     if (!inventory) {
+//       return res.status(404).json({
+//         message: "Inventory item not found",
+//       });
+//     }
+
+//     // 🔁 revert inventory status
+//     inventory.status = "approved";
+//     await inventory.save();
+
+//     // ❌ delete sold record
+//     await Sold.findByIdAndDelete(id);
+
+//     res.json({
+//       success: true,
+//       message: "Sale undone successfully",
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// }
+
+/* =========================
+   UPDATE SOLD ITEM
+========================= */
+
+export async function updateSold(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { price, soldDate, buyer } = req.body;
+
+    const sold = await Sold.findById(id);
+    if (!sold) {
+      return res.status(404).json({ message: "Sold item not found" });
+    }
+
+    sold.price = price;
+    sold.soldDate = soldDate;
+    sold.buyer = buyer;
+
+    await sold.save();
+
+    res.json({
+      success: true,
+      data: sold,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// export async function updateSold(req, res, next) {
+//   try {
+//     const { id } = req.params;
+//     const { price, soldDate, buyer } = req.body;
+
+//     if (!price || !soldDate) {
+//       return res.status(400).json({
+//         message: "Price and sold date are required",
+//       });
+//     }
+
+//     const sold = await Sold.findById(id);
+
+//     if (!sold) {
+//       return res.status(404).json({
+//         message: "Sold record not found",
+//       });
+//     }
+
+//     sold.price = price;
+//     sold.soldDate = soldDate;
+//     sold.buyer = buyer;
+
+//     await sold.save();
+
+//     res.json({
+//       success: true,
+//       data: sold,
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// }
 
 // export async function markAsSold(req, res, next) {
 //   try {

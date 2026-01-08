@@ -24,7 +24,7 @@ const soldSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Inventory",
       required: true,
-      unique: true, // ek inventory item sirf ek baar sold ho
+      //unique: true, // ek inventory item sirf ek baar sold ho
     },
 
     // 💰 Sale details

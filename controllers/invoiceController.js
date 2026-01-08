@@ -2,6 +2,7 @@ import Inventory from "../models/inventoryModel.js";
 import Packaging from "../models/Packaging.js";
 import Invoice from "../models/Invoice.js";
 
+
 export const generateInvoice = async (req, res) => {
   const { packagingId, keptItemIds } = req.body;
 
