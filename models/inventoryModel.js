@@ -87,22 +87,22 @@ const inventorySchema = new mongoose.Schema(
 
     /* ❌ NOT REQUIRED ANYMORE */
 
-  dimensions: {
-  length: {
-    type: Number,
-  },
-  width: {
-    type: Number,
-  },
-  height: {
-    type: Number,
-  },
-  unit: {
-    type: String,
-    enum: ["mm", "cm", "inch"],
-    default: "mm",
-  },
-},
+    dimensions: {
+      length: {
+        type: Number,
+      },
+      width: {
+        type: Number,
+      },
+      height: {
+        type: Number,
+      },
+      unit: {
+        type: String,
+        enum: ["mm", "cm", "inch"],
+        default: "mm",
+      },
+    },
 
     location: {
       type: String,
