@@ -56,7 +56,9 @@ import Sold from "../models/soldModel.js";
 import Invoice from "../models/Invoice.js";
 import multer from "multer";
 import Inventory from "../models/inventoryModel.js";
+import { generateValidationReport } from "../utils/excel.js";
 import { parseExcel, generateExcel } from "../utils/excel.js";
+import Category from "../models/category.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 export const importMiddleware = upload.single("file");
@@ -124,45 +126,84 @@ export const importInventoryFromExcel = async (req, res) => {
 
     let inserted = 0;
     let skipped = 0;
-    let errors = [];
+    const report = [];
 
-    for (const row of rows) {
-      if (!row.serialNumber || !row.category) {
-        skipped++;
-        continue;
-      }
+   for (const row of rows) {
+  // BASIC VALIDATION
+  if (
+    !row.serialNumber ||
+    !row.category ||
+    !row.pieces ||
+    !row.weight ||
+    !row.purchaseCode ||
+    !row.saleCode
+  ) {
+    skipped++;
+    report.push({ ...row, status: "INVALID" });
+    continue;
+  }
 
-      try {
-        await Inventory.create({
-          serialNumber: row.serialNumber,
-          category: row.category,
-          pieces: row.pieces,
-          weight: row.weight,
-          weightUnit: row.weightUnit,
-          purchaseCode: row.purchaseCode,
-          saleCode: row.saleCode,
-          status: row.status || "pending",
-        });
-        inserted++;
-      } catch (err) {
-        if (err.code === 11000) {
-          skipped++;
-        } else {
-          errors.push({ row, error: err.message });
-        }
-      }
-    }
+  // CATEGORY NAME → ID
+  const categoryDoc = await Category.findOne({
+    name: new RegExp(`^${row.category}$`, "i"),
+  });
+
+  if (!categoryDoc) {
+    skipped++;
+    report.push({ ...row, status: "INVALID", reason: "Category not found" });
+    continue;
+  }
+
+  // DUPLICATE CHECK
+  const exists = await Inventory.findOne({
+    serialNumber: row.serialNumber,
+  });
+
+  if (exists) {
+    skipped++;
+    report.push({ ...row, status: "DUPLICATE" });
+    continue;
+  }
+
+  // INSERT
+  await Inventory.create({
+  serialNumber: row.serialNumber,
+  category: categoryDoc._id,
+  pieces: row.pieces,
+  weight: row.weight,
+  weightUnit: row.weightUnit || "carat",
+  purchaseCode: row.purchaseCode,
+  saleCode: row.saleCode,
+  status: row.status || "pending",
+
+  dimensions: {
+    length: row.length,
+    width: row.width,
+    height: row.height,
+    unit: row.dimensionUnit || "mm",
+  },
+});
+
+
+  inserted++;
+  report.push({ ...row, status: "INSERTED" });
+}
+
 
     res.json({
       success: true,
       inserted,
       skipped,
-      errors,
+      report,
     });
   } catch (err) {
-    res.status(500).json({ message: "Import failed" });
+    res.status(500).json({
+      success: false,
+      message: "Import failed",
+    });
   }
 };
+
 
 export const exportInventoryToExcel = async (req, res) => {
   const inventory = await Inventory.find().populate("category");
@@ -209,9 +250,14 @@ export const createInventoryItem = async (req, res, next) => {
       weightUnit,
       purchaseCode,
       saleCode,
+      dimensions,
+      location,
+      certification,
+      status,
+      description,
+      images,
     } = req.body;
 
-    // 🔒 BASIC VALIDATION (same as before)
     if (
       !serialNumber ||
       !category ||
@@ -227,15 +273,27 @@ export const createInventoryItem = async (req, res, next) => {
       });
     }
 
-    // ✅ CREATE INVENTORY ITEM
-    const item = await Inventory.create(req.body);
+    const item = await Inventory.create({
+      serialNumber,
+      category,
+      pieces,
+      weight,
+      weightUnit,
+      purchaseCode,
+      saleCode,
+      dimensions, // 🔥 IMPORTANT
+      location,
+      certification,
+      status,
+      description,
+      images,
+    });
 
     res.status(201).json({
       success: true,
       data: item,
     });
   } catch (err) {
-    // 🔥 DUPLICATE SERIAL NUMBER (MongoDB unique index)
     if (err.code === 11000 && err.keyPattern?.serialNumber) {
       return res.status(409).json({
         success: false,
@@ -244,10 +302,10 @@ export const createInventoryItem = async (req, res, next) => {
       });
     }
 
-    // ❗ ANY OTHER ERROR
     next(err);
   }
 };
+
 
 /* UPDATE */
 // export const updateInventoryItem = async (req, res) => {
@@ -267,10 +325,18 @@ export const updateInventoryItem = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const updated = await Inventory.findByIdAndUpdate(id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+   const updated = await Inventory.findByIdAndUpdate(
+  id,
+  {
+    ...req.body,
+    dimensions: req.body.dimensions, // 🔥 FORCE SAVE
+  },
+  {
+    new: true,
+    runValidators: true,
+  }
+);
+
 
     if (!updated) {
       return res.status(404).json({
@@ -337,3 +403,18 @@ export async function deleteInventoryItem(req, res, next) {
     next(err);
   }
 }
+
+export const downloadImportReport = async (req, res) => {
+  const buffer = generateValidationReport(req.body.rows);
+
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename=import-report.xlsx"
+  );
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+
+  res.send(buffer);
+};

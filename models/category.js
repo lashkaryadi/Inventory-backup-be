@@ -29,5 +29,10 @@ categorySchema.set("toJSON", {
     delete ret.__v;
   },
 });
+const Category =
+  mongoose.models.Category ||
+  mongoose.model("Category", categorySchema);
 
-export default mongoose.model("Category", categorySchema);
+export default Category;
+
+// export default mongoose.model("Category", categorySchema);

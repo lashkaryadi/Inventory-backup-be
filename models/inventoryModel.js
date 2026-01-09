@@ -9,7 +9,7 @@
 // }
 
 // export function create(item) {
-//   const stmt = db.prepare(`INSERT INTO inventory 
+//   const stmt = db.prepare(`INSERT INTO inventory
 //     (serialNumber, category, pieces, weight, dimensions, certification, location, approvalStatus)
 //     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
 //   const info = stmt.run(
@@ -20,7 +20,7 @@
 // }
 
 // export function update(id, changes) {
-//   const stmt = db.prepare(`UPDATE inventory SET 
+//   const stmt = db.prepare(`UPDATE inventory SET
 //     serialNumber = ?, category = ?, pieces = ?, weight = ?,
 //     dimensions = ?, certification = ?, location = ?, approvalStatus = ?
 //     WHERE id = ?`);
@@ -36,7 +36,6 @@
 //   const info = stmt.run(id);
 //   return info.changes;
 // }
-
 
 import mongoose from "mongoose";
 import Sold from "./soldModel.js";
@@ -87,13 +86,23 @@ const inventorySchema = new mongoose.Schema(
     },
 
     /* ❌ NOT REQUIRED ANYMORE */
-    length: Number,
-    width: Number,
-    height: Number,
-    dimensionUnit: {
-      type: String,
-      enum: ["mm", "cm", "inch"],
-    },
+
+  dimensions: {
+  length: {
+    type: Number,
+  },
+  width: {
+    type: Number,
+  },
+  height: {
+    type: Number,
+  },
+  unit: {
+    type: String,
+    enum: ["mm", "cm", "inch"],
+    default: "mm",
+  },
+},
 
     location: {
       type: String,
@@ -135,6 +144,5 @@ inventorySchema.pre("deleteOne", { document: true }, async function (next) {
     next(err);
   }
 });
-
 
 export default mongoose.model("Inventory", inventorySchema);
