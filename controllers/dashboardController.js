@@ -9,29 +9,29 @@ export const getDashboardStats = async (req, res) => {
     /* ---------------- COUNTS ---------------- */
     const [
       totalInventory,
-      approvedItems,
+      in_stockItems,
       soldItems,
       pendingApproval,
     ] = await Promise.all([
       Inventory.countDocuments(),
-      Inventory.countDocuments({ status: "approved" }),
+      Inventory.countDocuments({ status: "in_stock" }),
       Sold.countDocuments(),
       Inventory.countDocuments({ status: "pending" }),
     ]);
 
     /* ---------------- TOTAL VALUE ---------------- */
-    const approvedInventory = await Inventory.find(
-      { status: "approved" },
+    const in_stockInventory = await Inventory.find(
+      { status: "in_stock" },
       { price: 1 }
     );
 
-    const totalValue = approvedInventory.reduce(
+    const totalValue = in_stockInventory.reduce(
       (sum, item) => sum + (item.price || 0),
       0
     );
 
     /* ---------------- IN-STOCK VALUE CALCULATION ---------------- */
-    const inStockInventory = await Inventory.find({ status: "approved" });
+    const inStockInventory = await Inventory.find({ status: "in_stock" });
 
     let inStockValue = 0;
     let valid = true;
@@ -74,7 +74,7 @@ const mappedRecentSales = safeRecentSales.map((s) => ({
     res.json({
       data: {
         totalInventory,
-        approvedItems,
+        in_stockItems,
         soldItems,
         pendingApproval,
         totalValue,
