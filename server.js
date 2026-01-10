@@ -10,6 +10,7 @@ import inventoryRoutes from "./routes/inventory.js";
 import soldRoutes from "./routes/sold.js";
 import invoice from "./routes/invoiceRoutes.js";
 import userRoutes from "./routes/user.js";
+import auditLogRoutes from "./routes/auditLogs.js";
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 
 dotenv.config();
@@ -43,6 +44,7 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/sold", soldRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/invoices", invoice);
+app.use("/api/audit-logs", auditLogRoutes);
 
 
 /**

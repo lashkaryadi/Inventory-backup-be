@@ -30,6 +30,7 @@
 import Sold from "../models/soldModel.js";
 import Invoice from "../models/Invoice.js";
 import Inventory from "../models/inventoryModel.js";
+import AuditLog from "../models/auditLogModel.js";
 import { generateExcel } from "../utils/excel.js";
 
 /* =========================
@@ -206,6 +207,23 @@ export async function recordSale(req, res, next) {
       amount: price,
     });
 
+    /* ---------- AUDIT LOG ---------- */
+    await AuditLog.create({
+      action: "SELL_ITEM",
+      entityType: "inventory",
+      entityId: inventory._id,
+      performedBy: req.user._id,
+      meta: {
+        serialNumber: inventory.serialNumber,
+        salePrice: price,
+        currency,
+        soldDate,
+        buyer,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
     /* ---------- RESPONSE ---------- */
     res.status(201).json({
       success: true,
@@ -243,6 +261,19 @@ export async function undoSold(req, res, next) {
 
     // delete sold record
     await sold.deleteOne();
+
+    /* ---------- AUDIT LOG ---------- */
+    await AuditLog.create({
+      action: "UNDO_SOLD",
+      entityType: "sold",
+      entityId: sold._id,
+      performedBy: req.user._id,
+      meta: {
+        serialNumber: sold.inventoryItem?.serialNumber,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -346,6 +377,8 @@ export async function updateSold(req, res, next) {
       return res.status(404).json({ message: "Sold item not found" });
     }
 
+    const before = sold.toObject();
+
     sold.price = price;
     sold.soldDate = soldDate;
     sold.buyer = buyer;
@@ -359,6 +392,20 @@ export async function updateSold(req, res, next) {
         buyer,
       }
     );
+
+    /* ---------- AUDIT LOG ---------- */
+    await AuditLog.create({
+      action: "UPDATE_SOLD",
+      entityType: "sold",
+      entityId: sold._id,
+      performedBy: req.user._id,
+      meta: {
+        before,
+        after: sold.toObject(),
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     res.json({
       success: true,
