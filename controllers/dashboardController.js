@@ -19,35 +19,40 @@ export const getDashboardStats = async (req, res) => {
       Inventory.countDocuments({ status: "pending" }),
     ]);
 
-    /* ---------------- TOTAL VALUE ---------------- */
-    const in_stockInventory = await Inventory.find(
-      { status: "in_stock" },
-      { price: 1 }
-    );
+    /* ---------------- TOTAL VALUE (ADMIN ONLY) ---------------- */
+    let totalValue = 0;
+    let calculatedInStockValue = "-";
 
-    const totalValue = in_stockInventory.reduce(
-      (sum, item) => sum + (item.price || 0),
-      0
-    );
+    if (req.user && req.user.role === "admin") {
+      const in_stockInventory = await Inventory.find(
+        { status: "in_stock" },
+        { price: 1 }
+      );
 
-    /* ---------------- IN-STOCK VALUE CALCULATION ---------------- */
-    const inStockInventory = await Inventory.find({ status: "in_stock" });
+      totalValue = in_stockInventory.reduce(
+        (sum, item) => sum + (item.price || 0),
+        0
+      );
 
-    let inStockValue = 0;
-    let valid = true;
+      /* ---------------- IN-STOCK VALUE CALCULATION (ADMIN ONLY) ---------------- */
+      const inStockInventory = await Inventory.find({ status: "in_stock" });
 
-    for (const item of inStockInventory) {
-      const saleCodeNum = Number(item.saleCode);
+      let inStockValue = 0;
+      let valid = true;
 
-      if (isNaN(saleCodeNum)) {
-        valid = false;
-        break;
+      for (const item of inStockInventory) {
+        const saleCodeNum = Number(item.saleCode);
+
+        if (isNaN(saleCodeNum)) {
+          valid = false;
+          break;
+        }
+
+        inStockValue += saleCodeNum * item.weight;
       }
 
-      inStockValue += saleCodeNum * item.weight;
+      calculatedInStockValue = valid ? inStockValue : "-";
     }
-
-    const calculatedInStockValue = valid ? inStockValue : "-";
 
     /* ---------------- RECENT SALES ---------------- */
     const recentSales = await Sold.find()
