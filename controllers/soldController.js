@@ -112,6 +112,9 @@ export async function getSoldById(req, res, next) {
 ========================= */
 
 export const markAsSold = async (req, res) => {
+  const session = await Inventory.startSession();
+  session.startTransaction();
+
   try {
     const {
       inventoryId,
@@ -125,9 +128,9 @@ export const markAsSold = async (req, res) => {
 
     if (
       !inventoryId ||
-      !soldPieces ||
-      !soldWeight ||
-      !price ||
+      soldPieces == null ||
+      soldWeight == null ||
+      price == null ||
       !currency ||
       !soldDate
     ) {
@@ -140,7 +143,8 @@ export const markAsSold = async (req, res) => {
     const inventory = await Inventory.findOne({
       _id: inventoryId,
       ownerId: req.user.ownerId,
-    });
+      isDeleted: { $ne: true },
+    }).session(session);
 
     if (!inventory) {
       return res.status(404).json({
@@ -149,7 +153,15 @@ export const markAsSold = async (req, res) => {
       });
     }
 
-    // 🔐 Overselling protection
+    // ✅ ALLOWED STATUSES
+    if (!["in_stock", "pending", "partially_sold"].includes(inventory.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "This item cannot be sold",
+      });
+    }
+
+    // 🔐 Oversell protection
     if (soldPieces > inventory.availablePieces) {
       return res.status(400).json({
         success: false,
@@ -164,48 +176,46 @@ export const markAsSold = async (req, res) => {
       });
     }
 
-    // ✅ Calculate cost and profit
-    const cost = (inventory.purchasePrice || 0) * soldWeight;
-    const profit = price - cost;
+    // ✅ Create sold record
+    const sold = await Sold.create(
+      [{
+        inventoryItem: inventory._id,
+        soldPieces,
+        soldWeight,
+        price,
+        totalPrice: price,
+        currency,
+        buyer,
+        soldDate,
+        ownerId: req.user.ownerId,
+      }],
+      { session }
+    );
 
-    // ✅ Create sold entry (NO UNIQUE restriction now)
-    const sold = await Sold.create({
-      inventoryItem: inventory._id,
-      soldPieces,
-      soldWeight,
-      price, // total price
-      totalPrice: price, // store separately to avoid floating-point errors
-      currency,
-      buyer,
-      soldDate,
-      costPrice: cost,
-      profit,
-      ownerId: req.user.ownerId,
-    });
-
-    // ✅ Deduct inventory
+    // ✅ Update inventory
     inventory.availablePieces -= soldPieces;
     inventory.availableWeight -= soldWeight;
 
-    // ✅ Auto status update
-    if (
-      inventory.availablePieces === 0 ||
-      inventory.availableWeight === 0
-    ) {
+    if (inventory.availablePieces === 0 && inventory.availableWeight === 0) {
       inventory.status = "sold";
     } else {
       inventory.status = "partially_sold";
     }
 
-    await inventory.save();
+    await inventory.save({ session });
 
-    res.json({
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(201).json({
       success: true,
-      data: sold,
+      data: sold[0],
     });
   } catch (err) {
-    console.error("markAsSold error:", err);
+    await session.abortTransaction();
+    session.endSession();
 
+    console.error("markAsSold error:", err);
     res.status(500).json({
       success: false,
       message: "Failed to mark item as sold",
@@ -492,72 +502,5 @@ export const exportSoldItemsToExcel = async (req, res) => {
   }
 };
 
-/* =========================
-   UPDATE SOLD ITEM
-========================= */
-
-export async function updateSold(req, res, next) {
-  try {
-    const { id } = req.params;
-    const { price, soldDate, buyer } = req.body;
-
-    const sold = await Sold.findOne({
-      _id: id,
-      ownerId: req.user.ownerId
-    });
-    if (!sold) {
-      return res.status(404).json({ message: "Sold item not found" });
-    }
-
-    const before = sold.toObject();
-
-    sold.price = price;
-    sold.soldDate = soldDate;
-    sold.buyer = buyer;
-
-    await sold.save();
-
-    // Update invoice for both old and new formats
-    await Invoice.findOneAndUpdate(
-      { soldItem: sold._id },
-      {
-        amount: price,
-        buyer,
-      }
-    );
-
-    // Update invoice for new format
-    await Invoice.findOneAndUpdate(
-      { "items.soldId": sold._id },
-      {
-        $set: {
-          "items.$.price": price,
-          "items.$.amount": price,
-          buyer,
-        }
-      }
-    );
-
-    /* ---------- AUDIT LOG ---------- */
-    await AuditLog.create({
-      action: "UPDATE_SOLD",
-      entityType: "sold",
-      entityId: sold._id,
-      performedBy: req.user.id,
-      meta: {
-        before,
-        after: sold.toObject(),
-      },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-      ownerId: req.user.ownerId,
-    });
-
-    res.json({
-      success: true,
-      data: sold,
-    });
-  } catch (err) {
-    next(err);
-  }
-}
+// ❌ REMOVED: Update sold feature disabled to prevent accounting bugs
+// export async function updateSold(req, res, next) { ... }

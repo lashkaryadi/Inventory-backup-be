@@ -1,14 +1,16 @@
 import AuditLog from "../models/auditLogModel.js";
+import Inventory from "../models/inventoryModel.js";
+import Sold from "../models/soldModel.js";
+import Category from "../models/Category.js";
 import { generateExcel } from "../utils/excel.js";
 
 export const getAuditLogs = async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      action,
-      inventoryId,
-    } = req.query;
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200); // ✅ Increased max
+    const skip = (page - 1) * limit;
+
+    const { action, inventoryId } = req.query;
 
     const query = { ownerId: req.user.ownerId };
 
@@ -20,32 +22,92 @@ export const getAuditLogs = async (req, res) => {
       query.entityId = inventoryId;
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
-
     const [logs, total] = await Promise.all([
       AuditLog.find(query)
-        .populate("performedBy", "username email")
+        .populate("performedBy", "email username")
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit)),
+        .limit(limit)
+        .lean(),
       AuditLog.countDocuments(query),
     ]);
 
+    // ✅ ENHANCE: Fetch entity names
+    const enhancedLogs = await Promise.all(
+      logs.map(async (log) => {
+        let entityName = "-";
+
+        try {
+          if (log.entityType === "inventory" && log.entityId) {
+            const inv = await Inventory.findById(log.entityId).select("serialNumber");
+            entityName = inv?.serialNumber || "Deleted Item";
+          } else if (log.entityType === "sold" && log.entityId) {
+            const sold = await Sold.findById(log.entityId)
+              .populate("inventoryItem", "serialNumber")
+              .select("inventoryItem");
+            entityName = sold?.inventoryItem?.serialNumber || "Deleted Item";
+          } else if (log.entityType === "category" && log.entityId) {
+            const cat = await Category.findById(log.entityId).select("name");
+            entityName = cat?.name || "Deleted Category";
+          }
+        } catch (err) {
+          console.error("Error fetching entity name:", err);
+        }
+
+        return {
+          ...log,
+          entityName,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: logs,
+      data: enhancedLogs,
       meta: {
+        page,
+        limit,
         total,
-        page: Number(page),
         pages: Math.ceil(total / limit),
       },
     });
   } catch (err) {
+    console.error("Get audit logs error:", err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch audit logs",
     });
   }
+};
+
+/* =========================
+CLEAR AUDIT LOGS (ADMIN ONLY)
+========================= */
+export const clearAuditLogs = async (req, res) => {
+try {
+// ✅ Only allow admin to clear logs
+if (req.user.role !== "admin") {
+return res.status(403).json({
+success: false,
+message: "Only admins can clear audit logs",
+});
+}
+
+const result = await AuditLog.deleteMany({
+  ownerId: req.user.ownerId,
+});
+
+res.json({
+  success: true,
+  message: `${result.deletedCount} audit logs cleared`,
+});
+} catch (err) {
+console.error("Clear audit logs error:", err);
+res.status(500).json({
+success: false,
+message: "Failed to clear audit logs",
+});
+}
 };
 
 export const exportAuditLogs = async (req, res) => {

@@ -15,7 +15,6 @@ import {
   getSoldById,
   recordSale,
   undoSold,
-  updateSold,
   exportSoldItemsToExcel,
   markAsSold,
 } from "../controllers/soldController.js";
@@ -25,9 +24,11 @@ const router = express.Router();
 
 router.get("/", protect, getSoldItems);
 router.get("/:id", protect, getSoldById);
-router.post("/", protect, recordSale);
+// ❌ Disabled – use mark-as-sold only
+// router.post("/", protect, recordSale);
 router.post("/mark-as-sold", protect, markAsSold);
 router.delete("/:id/undo", protect, undoSold);
-router.put("/:id", protect, updateSold);
+// ❌ REMOVED: Update sold feature disabled
+// router.put("/:id", protect, updateSold);
 router.get("/export", protect, exportSoldItemsToExcel);
 export default router;

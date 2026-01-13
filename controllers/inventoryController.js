@@ -619,12 +619,12 @@ export const downloadImportReport = async (req, res) => {
 };
 
 /* =========================
-   GET SELLABLE INVENTORY (in_stock and pending items)
+   GET SELLABLE INVENTORY (in_stock, pending, and partially_sold items)
 ========================= */
 export const getSellableInventory = async (req, res) => {
   try {
     const items = await Inventory.find({
-      status: { $in: ["in_stock", "pending"] },
+      status: { $in: ["in_stock", "pending", "partially_sold"] },
       isDeleted: { $ne: true }, // Exclude deleted items
       ownerId: req.user.ownerId
     }).populate("category", "name").sort({ createdAt: -1 });

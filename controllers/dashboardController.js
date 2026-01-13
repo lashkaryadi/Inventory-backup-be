@@ -1,96 +1,85 @@
 import Inventory from "../models/inventoryModel.js";
 import Sold from "../models/soldModel.js";
 
-/**
- * GET /api/dashboard
- */
 export const getDashboardStats = async (req, res) => {
-  try {
-    /* ---------------- COUNTS ---------------- */
-    const [
-      totalInventory,
-      in_stockItems,
-      soldItems,
-      pendingApproval,
-    ] = await Promise.all([
-      Inventory.countDocuments({ ownerId: req.user.ownerId }),
-      Inventory.countDocuments({ status: "in_stock", ownerId: req.user.ownerId }),
-      Sold.countDocuments({ ownerId: req.user.ownerId }),
-      Inventory.countDocuments({ status: "pending", ownerId: req.user.ownerId }),
-    ]);
+try {
+const ownerId = req.user.ownerId;
 
-    /* ---------------- TOTAL VALUE (ADMIN ONLY) ---------------- */
-    let totalValue = 0;
-    let calculatedInStockValue = "-";
+// ✅ COUNT INVENTORY BY STATUS
+const [totalInventory, inStockCount, soldCount, pendingCount] =
+  await Promise.all([
+    Inventory.countDocuments({ ownerId, isDeleted: false }),
+    Inventory.countDocuments({
+      ownerId,
+      status: "in_stock",
+      isDeleted: false,
+    }),
+    Inventory.countDocuments({ ownerId, status: "sold", isDeleted: false }),
+    Inventory.countDocuments({
+      ownerId,
+      status: "pending",
+      isDeleted: false,
+    }),
+  ]);
 
-    if (req.user && req.user.role === "admin") {
-      const in_stockInventory = await Inventory.find(
-        { status: "in_stock", ownerId: req.user.ownerId },
-        { price: 1 }
-      );
+// ✅ FIX: Calculate inventory value based on saleCode * availableWeight
+// Only for in_stock, pending, and partially_sold items
+const inventoryItems = await Inventory.find({
+  ownerId,
+  status: { $in: ["in_stock", "pending", "partially_sold"] },
+  isDeleted: false,
+}).select("saleCode availableWeight");
 
-      totalValue = in_stockInventory.reduce(
-        (sum, item) => sum + (item.price || 0),
-        0
-      );
+const totalValue = inventoryItems.reduce((sum, item) => {
+  const saleCode = parseFloat(item.saleCode) || 0;
+  const availableWeight = item.availableWeight || 0;
+  return sum + saleCode * availableWeight;
+}, 0);
 
-      /* ---------------- IN-STOCK VALUE CALCULATION (ADMIN ONLY) ---------------- */
-      const inStockInventory = await Inventory.find({ status: "in_stock", ownerId: req.user.ownerId });
+const inStockValue = await Inventory.find({
+  ownerId,
+  status: "in_stock",
+  isDeleted: false,
+})
+  .select("saleCode availableWeight")
+  .then((items) =>
+    items.reduce((sum, item) => {
+      const saleCode = parseFloat(item.saleCode) || 0;
+      const availableWeight = item.availableWeight || 0;
+      return sum + saleCode * availableWeight;
+    }, 0)
+  );
 
-      let inStockValue = 0;
-      let valid = true;
-
-      for (const item of inStockInventory) {
-        const saleCodeNum = Number(item.saleCode);
-
-        if (isNaN(saleCodeNum)) {
-          valid = false;
-          break;
-        }
-
-        inStockValue += saleCodeNum * item.weight;
-      }
-
-      calculatedInStockValue = valid ? inStockValue : "-";
-    }
-
-    /* ---------------- RECENT SALES ---------------- */
-    const recentSales = await Sold.find({ ownerId: req.user.ownerId })
-  .sort({ createdAt: -1 })
-  .limit(5)
+// ✅ RECENT SALES (last 5)
+const recentSales = await Sold.find({
+  ownerId,
+  isDeleted: { $ne: true },
+})
   .populate({
     path: "inventoryItem",
     populate: { path: "category" },
-  });
+  })
+  .sort({ createdAt: -1 })
+  .limit(5)
+  .lean();
 
-const safeRecentSales = recentSales.filter(
-  (s) => s.inventoryItem !== null
-);
-
-const mappedRecentSales = safeRecentSales.map((s) => ({
-  id: s._id,
-  inventoryItem: s.inventoryItem,
-  price: s.price,
-  currency: s.currency,
-  soldDate: s.soldDate,
-}));
-
-
-    res.json({
-      data: {
-        totalInventory,
-        in_stockItems,
-        soldItems,
-        pendingApproval,
-        totalValue,
-        inStockValue: calculatedInStockValue,
-        recentSales: mappedRecentSales,
-      },
-    });
-  } catch (error) {
-    console.error("Dashboard error:", error);
-    res.status(500).json({
-      error: "Failed to load dashboard data",
-    });
-  }
+res.json({
+  success: true,
+  data: {
+    totalInventory,
+    in_stockItems: inStockCount,
+    soldItems: soldCount,
+    pendingApproval: pendingCount,
+    totalValue: Math.round(totalValue * 100) / 100,
+    inStockValue: Math.round(inStockValue * 100) / 100,
+    recentSales: recentSales.filter((s) => s.inventoryItem),
+  },
+});
+} catch (err) {
+console.error("Dashboard stats error:", err);
+res.status(500).json({
+success: false,
+message: "Failed to fetch dashboard stats",
+});
+}
 };
