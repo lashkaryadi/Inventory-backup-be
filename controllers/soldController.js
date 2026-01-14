@@ -204,6 +204,26 @@ export const markAsSold = async (req, res) => {
 
     await inventory.save({ session });
 
+    // ✅ CREATE AUDIT LOG ENTRY
+    await AuditLog.create({
+      action: "CREATE_SALE",
+      entityType: "sold",
+      entityId: sold[0]._id,
+      performedBy: req.user.id,
+      meta: {
+        serialNumber: inventory.serialNumber,
+        soldPieces,
+        soldWeight,
+        price,
+        currency,
+        soldDate,
+        buyer,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      ownerId: req.user.ownerId,
+    });
+
     await session.commitTransaction();
     session.endSession();
 

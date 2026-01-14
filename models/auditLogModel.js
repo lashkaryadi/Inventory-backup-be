@@ -7,7 +7,8 @@ const auditLogSchema = new mongoose.Schema(
       enum: [
         "SELL_ITEM",
         "UNDO_SOLD",
-        "UPDATE_SOLD"
+        "UPDATE_SOLD",
+        "CREATE_SALE"
       ],
       required: true,
     },

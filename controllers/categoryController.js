@@ -110,19 +110,24 @@ export const createCategory = async (req, res) => {
   const ownerId =
     req.user.role === "admin" ? req.user.id : req.user.ownerId;
 
-  const exists = await Category.findOne({ name, ownerId });
-  if (exists) {
-    return res.status(409).json({ message: "Category already exists" });
+  try {
+    const category = await Category.create({
+      name,
+      description,
+      createdBy: req.user.id,
+      ownerId,
+    });
+
+    res.status(201).json(category);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({
+        message: "Category with this name already exists",
+      });
+    }
+
+    throw err;
   }
-
-  const category = await Category.create({
-    name,
-    description,
-    createdBy: req.user.id,
-    ownerId,
-  });
-
-  res.status(201).json(category);
 };
 
 /* UPDATE */

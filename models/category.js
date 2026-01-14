@@ -7,10 +7,7 @@ const categorySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    description: {
-      type: String,
-      default: "",
-    },
+    description: String,
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -20,6 +17,10 @@ const categorySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }
