@@ -61,10 +61,20 @@ export const downloadInvoicePDF = async (req, res) => {
 async function generateInvoiceNumber(ownerId) {
   const year = new Date().getFullYear();
 
-  // Get company name for prefix
+  // ✅ GET COMPANY NAME
   const company = await Company.findOne({ ownerId });
-  const prefix = company?.companyName?.split(' ')[0]?.toUpperCase() || 'INV';
 
+  // ✅ EXTRACT FIRST WORD FROM COMPANY NAME (MAX 10 CHARS)
+  let prefix = "INV";
+  if (company?.companyName) {
+    const firstWord = company.companyName.trim().split(/\s+/)[0];
+    prefix = firstWord
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "") // Remove special chars
+      .substring(0, 10); // Max 10 chars
+  }
+
+  // ✅ GET COUNTER
   const counter = await Counter.findOneAndUpdate(
     { name: `invoice-${ownerId}-${year}` },
     { $inc: { value: 1 } },
@@ -94,41 +104,63 @@ async function generateInvoiceNumber(ownerId) {
 // };
 export const getInvoiceBySold = async (req, res) => {
   try {
-    const soldDoc = await Sold.findById(req.params.soldId).populate({
+    const soldDoc = await Sold.findOne({
+      _id: req.params.soldId,
+      ownerId: req.user.ownerId,
+    }).populate({
       path: "inventoryItem",
       populate: { path: "category" },
     });
 
     if (!soldDoc) {
-      return res.status(404).json({ message: "Sold item not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Sold item not found",
+      });
     }
 
-    // First, try to find an invoice that contains this sold item in its items array
-    let invoice = await Invoice.findOne({ "items.soldId": soldDoc._id });
+    // ✅ TRY TO FIND EXISTING INVOICE
+    let invoice = await Invoice.findOne({
+      $or: [
+        { "items.soldId": soldDoc._id },
+        { soldItems: soldDoc._id },
+        { soldItem: soldDoc._id }, // Old format
+      ],
+    });
 
-    // If not found, try the old way (for backward compatibility)
+    // ✅ AUTO-CREATE IF MISSING
     if (!invoice) {
-      invoice = await Invoice.findOne({ soldItem: soldDoc._id });
-    }
-
-    // Auto-create invoice if missing (old format)
-    if (!invoice) {
-      const invoiceNumber = await generateInvoiceNumber(req.user.ownerId);
-
-      // Get company for tax rate
       const company = await Company.findOne({ ownerId: req.user.ownerId });
       const taxRate = company?.taxRate || 0;
 
-      const subtotal = soldDoc.price;
+      const subtotal = soldDoc.totalPrice || soldDoc.price;
       const cgstAmount = (subtotal * (taxRate / 2)) / 100;
       const sgstAmount = cgstAmount;
       const totalAmount = subtotal + cgstAmount + sgstAmount;
 
+      const invoiceNumber = await generateInvoiceNumber(req.user.ownerId);
+
       invoice = await Invoice.create({
-        soldItem: soldDoc._id,
         invoiceNumber,
         buyer: soldDoc.buyer,
         currency: soldDoc.currency,
+
+        items: [
+          {
+            soldId: soldDoc._id,
+            serialNumber: soldDoc.inventoryItem?.serialNumber || "-",
+            category: soldDoc.inventoryItem?.category?.name || "-",
+            soldPieces: soldDoc.soldPieces,
+            soldWeight: soldDoc.soldWeight,
+            weight: soldDoc.soldWeight,
+            weightUnit: soldDoc.inventoryItem?.weightUnit || "carat",
+            price: soldDoc.price,
+            currency: soldDoc.currency,
+            amount: soldDoc.totalPrice || soldDoc.price,
+          },
+        ],
+
+        soldItems: [soldDoc._id],
         subtotal,
         taxRate,
         cgstAmount,
@@ -139,30 +171,30 @@ export const getInvoiceBySold = async (req, res) => {
       });
     }
 
-    // Populate based on the invoice format
-    if (invoice.items && invoice.items.length > 0) {
-      // New format: populate items
-      invoice = await Invoice.findById(invoice._id).populate({
+    // ✅ POPULATE AND RETURN
+    const populated = await Invoice.findById(invoice._id)
+      .populate({
         path: "items.soldId",
         populate: {
           path: "inventoryItem",
           populate: { path: "category" },
         },
-      });
-    } else {
-      // Old format: populate soldItem
-      invoice = await Invoice.findById(invoice._id).populate({
-        path: "soldItem",
+      })
+      .populate({
+        path: "soldItems",
         populate: {
           path: "inventoryItem",
           populate: { path: "category" },
         },
       });
-    }
 
-    res.json(invoice);
+    res.json(populated);
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch invoice" });
+    console.error("Get invoice error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch invoice",
+    });
   }
 };
 
@@ -171,16 +203,17 @@ export const createBulkInvoice = async (req, res) => {
   try {
     const { soldIds } = req.body;
 
-    // ✅ Remove duplicates
-    const uniqueSoldIds = [...new Set(soldIds)];
-
-    if (uniqueSoldIds.length === 0) {
+    if (!soldIds || !Array.isArray(soldIds) || soldIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: "No sold items provided",
       });
     }
 
+    // ✅ Remove duplicates
+    const uniqueSoldIds = [...new Set(soldIds)];
+
+    // ✅ FETCH SOLD ITEMS
     const soldItems = await Sold.find({
       _id: { $in: uniqueSoldIds },
       ownerId: req.user.ownerId,
@@ -192,52 +225,72 @@ export const createBulkInvoice = async (req, res) => {
     if (!soldItems.length) {
       return res.status(404).json({
         success: false,
-        message: "Sold items not found",
+        message: "No valid sold items found",
       });
     }
 
+    // ✅ CALCULATE TOTALS
     const company = await Company.findOne({ ownerId: req.user.ownerId });
     const taxRate = company?.taxRate || 0;
 
-    // Subtotal calculation must use:
     const subtotal = soldItems.reduce(
-      (sum, s) => sum + Number(s.totalPrice || s.price || 0),
+      (sum, s) => sum + (s.totalPrice || s.price || 0),
       0
     );
 
-    const invoiceItems = soldItems.map((sold) => ({
-      soldId: sold._id,
-      serialNumber: sold.inventoryItem.serialNumber,
-      category: sold.inventoryItem.category?.name,
-      soldPieces: sold.soldPieces,
-      soldWeight: sold.soldWeight,
-      price: sold.price,
-      currency: sold.currency,
-      amount: Number(sold.totalPrice || sold.price || 0),
-    }));
-
     const cgstAmount = (subtotal * (taxRate / 2)) / 100;
     const sgstAmount = cgstAmount;
+    const totalAmount = subtotal + cgstAmount + sgstAmount;
 
+    // ✅ BUILD INVOICE ITEMS
+    const invoiceItems = soldItems.map((sold) => ({
+      soldId: sold._id,
+      serialNumber: sold.inventoryItem?.serialNumber || "-",
+      category: sold.inventoryItem?.category?.name || "-",
+      soldPieces: sold.soldPieces,
+      soldWeight: sold.soldWeight,
+      weight: sold.soldWeight,
+      weightUnit: sold.inventoryItem?.weightUnit || "carat",
+      price: sold.price,
+      currency: sold.currency,
+      amount: sold.totalPrice || sold.price,
+    }));
+
+    // ✅ GENERATE INVOICE NUMBER
     const invoiceNumber = await generateInvoiceNumber(req.user.ownerId);
 
+    // ✅ CREATE INVOICE
     const invoice = await Invoice.create({
       invoiceNumber,
       buyer: soldItems[0].buyer,
+      currency: soldItems[0].currency,
       items: invoiceItems,
+      soldItems: uniqueSoldIds,
       subtotal,
       taxRate,
       cgstAmount,
       sgstAmount,
       taxAmount: cgstAmount + sgstAmount,
-      totalAmount: subtotal + cgstAmount + sgstAmount,
+      totalAmount,
       ownerId: req.user.ownerId,
     });
 
-    res.json(invoice);
+    // ✅ POPULATE RESPONSE
+    const populated = await Invoice.findById(invoice._id).populate({
+      path: "items.soldId",
+      populate: {
+        path: "inventoryItem",
+        populate: { path: "category" },
+      },
+    });
+
+    res.json(populated);
   } catch (error) {
     console.error("Bulk invoice error:", error);
-    res.status(500).json({ message: "Failed to create invoice" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to create invoice",
+    });
   }
 };
 

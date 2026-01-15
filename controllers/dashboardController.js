@@ -22,18 +22,18 @@ const [totalInventory, inStockCount, soldCount, pendingCount] =
     }),
   ]);
 
-// ✅ FIX: Calculate inventory value based on saleCode * availableWeight
+// ✅ FIX: Calculate inventory value based on purchaseCode * availableWeight (for in-stock items)
 // Only for in_stock, pending, and partially_sold items
 const inventoryItems = await Inventory.find({
   ownerId,
   status: { $in: ["in_stock", "pending", "partially_sold"] },
   isDeleted: false,
-}).select("saleCode availableWeight");
+}).select("purchaseCode availableWeight");
 
 const totalValue = inventoryItems.reduce((sum, item) => {
-  const saleCode = parseFloat(item.saleCode) || 0;
+  const purchaseCode = parseFloat(item.purchaseCode) || 0;
   const availableWeight = item.availableWeight || 0;
-  return sum + saleCode * availableWeight;
+  return sum + purchaseCode * availableWeight;
 }, 0);
 
 const inStockValue = await Inventory.find({
@@ -41,12 +41,12 @@ const inStockValue = await Inventory.find({
   status: "in_stock",
   isDeleted: false,
 })
-  .select("saleCode availableWeight")
+  .select("purchaseCode availableWeight")
   .then((items) =>
     items.reduce((sum, item) => {
-      const saleCode = parseFloat(item.saleCode) || 0;
+      const purchaseCode = parseFloat(item.purchaseCode) || 0;
       const availableWeight = item.availableWeight || 0;
-      return sum + saleCode * availableWeight;
+      return sum + purchaseCode * availableWeight;
     }, 0)
   );
 

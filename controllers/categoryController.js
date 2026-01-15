@@ -105,28 +105,52 @@ export const getCategories = async (req, res) => {
 
 /* CREATE */
 export const createCategory = async (req, res) => {
-  const { name, description } = req.body;
-
-  const ownerId =
-    req.user.role === "admin" ? req.user.id : req.user.ownerId;
-
   try {
+    const { name, description } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: "Category name is required",
+      });
+    }
+
+    // ✅ CHECK IF EXISTS FOR THIS OWNER
+    const existing = await Category.findOne({
+      name: { $regex: new RegExp(`^${name}$`, "i") },
+      ownerId: req.user.ownerId,
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: "Category with this name already exists for your account",
+      });
+    }
+
     const category = await Category.create({
       name,
       description,
-      createdBy: req.user.id,
-      ownerId,
+      ownerId: req.user.ownerId,
     });
 
-    res.status(201).json(category);
+    res.status(201).json({
+      success: true,
+      data: category,
+    });
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(400).json({
+      return res.status(409).json({
+        success: false,
         message: "Category with this name already exists",
       });
     }
 
-    throw err;
+    console.error("Create category error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create category",
+    });
   }
 };
 

@@ -8,38 +8,29 @@ const categorySchema = new mongoose.Schema(
       trim: true,
     },
     description: String,
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    },
-    isDeleted: {
-      type: Boolean,
-      default: false,
+      index: true,
     },
   },
   { timestamps: true }
 );
 
-// 🔥 COMPOUND INDEX (MULTI-TENANT SAFE)
-categorySchema.index({ name: 1, ownerId: 1 }, { unique: true });
+// ✅ UNIQUE CONSTRAINT: Category name unique per owner
+categorySchema.index(
+  { ownerId: 1, name: 1 },
+  { unique: true }
+);
 
 categorySchema.set("toJSON", {
   transform: (_, ret) => {
     ret.id = ret._id;
     delete ret._id;
     delete ret.__v;
+    return ret;
   },
 });
-const Category =
-  mongoose.models.Category ||
-  mongoose.model("Category", categorySchema);
 
-export default Category;
-
-// export default mongoose.model("Category", categorySchema);
+export default mongoose.model("Category", categorySchema);
