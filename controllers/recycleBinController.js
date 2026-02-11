@@ -34,27 +34,58 @@ export const getRecycleBin = async (req, res) => {
 export const restoreItems = async (req, res) => {
   const { ids } = req.body;
 
+  if (!ids || !ids.length) {
+    return res.status(400).json({ success: false, message: "No IDs provided" });
+  }
+
   const items = await RecycleBin.find({ _id: { $in: ids } });
 
   for (const item of items) {
     if (item.entityType === "inventory") {
-      await Inventory.create(item.entityData);
+      await Inventory.findByIdAndUpdate(
+        item.entityId,
+        {
+          $set: {
+            ...item.entityData,
+            isDeleted: false,
+            deletedAt: null,
+          },
+        },
+        { upsert: true }
+      );
     }
+
     if (item.entityType === "category") {
-      await Category.create(item.entityData);
+      await Category.findByIdAndUpdate(
+        item.entityId,
+        {
+          $set: {
+            ...item.entityData,
+            isDeleted: false,
+            deletedAt: null,
+          },
+        },
+        { upsert: true }
+      );
     }
   }
 
   await RecycleBin.deleteMany({ _id: { $in: ids } });
 
-  res.json({ message: "Items restored successfully" });
+  res.json({ success: true });
 };
 
 /* PERMANENT DELETE */
 export const deleteItems = async (req, res) => {
   const { ids } = req.body;
+
+  if (!ids || !ids.length) {
+    return res.status(400).json({ success: false, message: "No IDs provided" });
+  }
+
   await RecycleBin.deleteMany({ _id: { $in: ids } });
-  res.json({ message: "Items permanently deleted" });
+
+  res.json({ success: true });
 };
 
 /* EMPTY BIN */
