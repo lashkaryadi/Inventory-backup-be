@@ -3,12 +3,16 @@ import {
   sellInventory,
   undoSale,
   getAllSales,
-  getSaleById
+  getSaleById,
+  exportSalesExcel
 } from '../controllers/saleController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { requireRole } from '../middleware/role.js';
 
 const router = express.Router();
+
+// Export sales to Excel (must be before /:id route)
+router.get('/export/excel', protect, exportSalesExcel);
 
 // Get all sales
 router.get('/', protect, getAllSales);
@@ -19,7 +23,7 @@ router.get('/:id', protect, getSaleById);
 // Sell inventory (admin and staff)
 router.post('/sell', protect, requireRole(['admin', 'staff']), sellInventory);
 
-// Undo sale (admin can undo any, staff can undo their own)
-router.post('/:id/undo', protect, requireRole(['admin', 'staff']), undoSale);
+// Undo sale (admin only)
+router.post('/:id/undo', protect, requireRole(['admin']), undoSale);
 
 export default router;

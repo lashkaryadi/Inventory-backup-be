@@ -42,13 +42,20 @@ export const getAuditLogs = async (req, res) => {
             const inv = await Inventory.findById(log.entityId).select("serialNumber");
             entityName = inv?.serialNumber || "Deleted Item";
           } else if (log.entityType === "sold" && log.entityId) {
-            const sold = await Sold.findById(log.entityId)
-              .populate("inventoryItem", "serialNumber")
-              .select("inventoryItem");
-            entityName = sold?.inventoryItem?.serialNumber || "Deleted Item";
+            const sale = await Sale.findById(log.entityId)
+              .populate("inventoryId", "serialNumber")
+              .select("inventoryId saleRef");
+            entityName = sale?.inventoryId?.serialNumber || sale?.saleRef || "Deleted Item";
+          } else if (log.entityType === "sale" && log.entityId) {
+            const sale = await Sale.findById(log.entityId)
+              .populate("inventoryId", "serialNumber")
+              .select("inventoryId saleRef");
+            entityName = sale?.saleRef || sale?.inventoryId?.serialNumber || "Deleted Sale";
           } else if (log.entityType === "category" && log.entityId) {
             const cat = await Category.findById(log.entityId).select("name");
             entityName = cat?.name || "Deleted Category";
+          } else if (log.entityType === "recycle_bin") {
+            entityName = "Recycle Bin";
           }
         } catch (err) {
           console.error("Error fetching entity name:", err);

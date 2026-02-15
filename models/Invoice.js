@@ -1,149 +1,196 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
+// ==================== INVOICE ITEM SCHEMA ====================
 const invoiceItemSchema = new mongoose.Schema({
-  inventoryId: {
+  saleId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Inventory',
-    required: true
+    ref: "Sale",
   },
   serialNumber: {
     type: String,
-    required: true
+    default: "-",
   },
   category: {
-    id: mongoose.Schema.Types.ObjectId,
-    name: String
+    type: String,
+    default: "-",
+  },
+  hsnCode: {
+    type: String,
+    default: "7103", // HSN code for precious/semi-precious stones
   },
   shapes: [{
     shapeName: String,
     pieces: Number,
-    weight: Number
+    weight: Number,
   }],
   soldPieces: {
     type: Number,
-    required: true
+    default: 0,
   },
   soldWeight: {
     type: Number,
-    required: true
+    default: 0,
   },
-  unitPrice: {
+  weightUnit: {
+    type: String,
+    default: "ct",
+  },
+  pricePerCarat: {
     type: Number,
-    required: true
+    default: 0,
   },
   lineTotal: {
     type: Number,
-    required: true
-  }
-});
+    required: true,
+  },
+}, { _id: false });
 
+// ==================== INVOICE SCHEMA ====================
 const invoiceSchema = new mongoose.Schema({
   invoiceNumber: {
     type: String,
     required: true,
-    unique: true,
-    trim: true
+    trim: true,
   },
-  customerId: {
+
+  // References to sales included in this invoice
+  saleIds: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Customer' // Assuming there's a Customer model
-  },
+    ref: "Sale",
+  }],
+
+  // Customer details (denormalized from sales)
   customerName: {
     type: String,
-    required: true,
-    trim: true
+    trim: true,
+    default: "Walk-in Customer",
   },
   customerEmail: {
     type: String,
-    trim: true
+    trim: true,
   },
   customerPhone: {
     type: String,
-    trim: true
+    trim: true,
   },
   customerAddress: {
     type: String,
-    trim: true
+    trim: true,
   },
+  customerGstin: {
+    type: String,
+    trim: true,
+  },
+
+  // Line items
   items: [invoiceItemSchema],
+
+  // Financial summary
   subtotal: {
     type: Number,
-    required: true
+    required: true,
   },
   taxRate: {
     type: Number,
-    default: 0
+    default: 0,
+  },
+  cgstRate: {
+    type: Number,
+    default: 0,
+  },
+  sgstRate: {
+    type: Number,
+    default: 0,
+  },
+  cgstAmount: {
+    type: Number,
+    default: 0,
+  },
+  sgstAmount: {
+    type: Number,
+    default: 0,
   },
   taxAmount: {
     type: Number,
-    default: 0
+    default: 0,
   },
   discount: {
     type: Number,
-    default: 0
+    default: 0,
   },
   total: {
     type: Number,
-    required: true
+    required: true,
   },
+
   currency: {
     type: String,
-    default: 'USD'
+    default: "INR",
   },
+
+  // Invoice metadata
   status: {
     type: String,
-    enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'],
-    default: 'draft'
+    enum: ["draft", "sent", "paid", "overdue", "cancelled"],
+    default: "draft",
   },
   issueDate: {
     type: Date,
-    default: Date.now
+    default: Date.now,
   },
   dueDate: {
-    type: Date
+    type: Date,
   },
   paymentTerms: {
     type: String,
-    default: 'Net 30'
+    default: "Due on Receipt",
   },
   notes: {
     type: String,
-    trim: true
+    trim: true,
   },
+  placeOfSupply: {
+    type: String,
+    trim: true,
+  },
+
+  // QR code data URL (for GST compliance)
+  qrCodeDataUrl: {
+    type: String,
+  },
+
+  // Multi-tenancy
+  ownerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    index: true,
+  },
+
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: "User",
+    required: true,
   },
+
+  // Lock
   locked: {
     type: Boolean,
-    default: false
+    default: false,
   },
-  lockedAt: {
-    type: Date
-  },
+  lockedAt: Date,
   lockedBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: "User",
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
+}, {
+  timestamps: true,
 });
 
-invoiceSchema.pre('save', function() {
-  this.updatedAt = Date.now();
-});
-
-// Create indexes for better query performance
-invoiceSchema.index({ invoiceNumber: 1 });
-invoiceSchema.index({ customerId: 1 });
+// ==================== INDEXES ====================
+invoiceSchema.index({ invoiceNumber: 1, ownerId: 1 }, { unique: true });
+invoiceSchema.index({ ownerId: 1, createdAt: -1 });
+invoiceSchema.index({ saleIds: 1 });
 invoiceSchema.index({ status: 1 });
-invoiceSchema.index({ createdAt: -1 });
 
-export default mongoose.model('Invoice', invoiceSchema);
+export default mongoose.model("Invoice", invoiceSchema);

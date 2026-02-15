@@ -27,10 +27,8 @@ const inventorySchema = new mongoose.Schema({
   serialNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
-    uppercase: true,
-    index: true
+    uppercase: true
   },
 
   // CATEGORY - Optional
@@ -195,7 +193,7 @@ const inventorySchema = new mongoose.Schema({
 
 // ==================== INDEXES ====================
 inventorySchema.index({ ownerId: 1, isDeleted: 1, status: 1 });
-inventorySchema.index({ serialNumber: 1, ownerId: 1 });
+inventorySchema.index({ serialNumber: 1, ownerId: 1 }, { unique: true });
 inventorySchema.index({ category: 1, ownerId: 1 });
 inventorySchema.index({ shapeType: 1, singleShape: 1 });
 inventorySchema.index({ "shapes.shape": 1 });
@@ -340,12 +338,19 @@ inventorySchema.statics.getAllUniqueShapes = async function(ownerId) {
 inventorySchema.statics.generateSerialNumber = async function(categoryId, ownerId) {
   if (!categoryId) {
     // No category - use generic prefix
-    const count = await this.countDocuments({
+    // Include deleted items so serial numbers are never reused
+    const regex = /^GEN\d{3}$/;
+    const lastItem = await this.findOne({
       ownerId,
-      isDeleted: false,
-      serialNumber: /^GEN\d{3}$/
-    });
-    return `GEN${String(count + 1).padStart(3, '0')}`;
+      serialNumber: regex
+    }).sort({ serialNumber: -1 });
+
+    let nextNumber = 1;
+    if (lastItem) {
+      const currentNumber = parseInt(lastItem.serialNumber.replace('GEN', ''));
+      nextNumber = currentNumber + 1;
+    }
+    return `GEN${String(nextNumber).padStart(3, '0')}`;
   }
 
   // Lazy-load Category to avoid circular import issues
@@ -362,11 +367,10 @@ inventorySchema.statics.generateSerialNumber = async function(categoryId, ownerI
     .substring(0, 3)
     .toUpperCase();
 
-  // Find highest number for this prefix
+  // Find highest number for this prefix (include deleted items so numbers are never reused)
   const regex = new RegExp(`^${prefix}\\d{3}$`);
   const lastItem = await this.findOne({
     ownerId,
-    isDeleted: false,
     serialNumber: regex
   }).sort({ serialNumber: -1 });
 

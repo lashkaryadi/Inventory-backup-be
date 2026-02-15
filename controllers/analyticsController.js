@@ -1,54 +1,63 @@
 import Sale from "../models/Sale.js";
-// import Inventory from "../models/Inventory.js";
+import Inventory from "../models/Inventory.js";
 import mongoose from "mongoose";
+import xlsx from "xlsx";
 
+// ==================== GET ANALYTICS DATA ====================
 export const getProfitAnalytics = async (req, res) => {
   try {
     const ownerId = new mongoose.Types.ObjectId(req.user.ownerId);
 
-    // ======================
     // TOTAL METRICS
-    // ======================
-    const totals = await Sold.aggregate([
-      { $match: { ownerId } },
+    const totals = await Sale.aggregate([
+      { $match: { ownerId, cancelled: false } },
       {
         $group: {
           _id: null,
-          revenue: { $sum: "$price" },
-          cost: { $sum: "$costPrice" },
-          profit: { $sum: "$profit" },
+          revenue: { $sum: "$totalAmount" },
+          totalWeight: { $sum: "$totalWeight" },
+          totalPieces: { $sum: "$totalPieces" },
           count: { $sum: 1 },
         },
       },
     ]);
 
-    // ======================
-    // MONTHLY PROFIT
-    // ======================
-    const monthly = await Sold.aggregate([
-      { $match: { ownerId } },
+    // MONTHLY SALES
+    const monthly = await Sale.aggregate([
+      { $match: { ownerId, cancelled: false } },
       {
         $group: {
           _id: {
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" },
+            year: { $year: "$soldAt" },
+            month: { $month: "$soldAt" },
           },
-          revenue: { $sum: "$price" },
-          profit: { $sum: "$profit" },
+          revenue: { $sum: "$totalAmount" },
+          count: { $sum: 1 },
+          weight: { $sum: "$totalWeight" },
         },
       },
       { $sort: { "_id.year": 1, "_id.month": 1 } },
     ]);
 
-    // ======================
-    // TOP CATEGORIES
-    // ======================
-    const categories = await Sold.aggregate([
-      { $match: { ownerId } },
+    // Format monthly data
+    const monthNames = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+    const formattedMonthly = monthly.map((m) => ({
+      month: `${monthNames[m._id.month - 1]} ${m._id.year}`,
+      revenue: m.revenue,
+      count: m.count,
+      weight: m.weight,
+    }));
+
+    // TOP CATEGORIES BY REVENUE
+    const categories = await Sale.aggregate([
+      { $match: { ownerId, cancelled: false } },
       {
         $lookup: {
           from: "inventories",
-          localField: "inventoryItem",
+          localField: "inventoryId",
           foreignField: "_id",
           as: "inventory",
         },
@@ -65,135 +74,95 @@ export const getProfitAnalytics = async (req, res) => {
       {
         $group: {
           _id: { $arrayElemAt: ["$category.name", 0] },
-          revenue: { $sum: "$price" },
+          revenue: { $sum: "$totalAmount" },
+          count: { $sum: 1 },
+          weight: { $sum: "$totalWeight" },
         },
       },
       { $sort: { revenue: -1 } },
-      { $limit: 5 },
+      { $limit: 10 },
+    ]);
+
+    // TOP CUSTOMERS
+    const customers = await Sale.aggregate([
+      { $match: { ownerId, cancelled: false } },
+      {
+        $group: {
+          _id: "$customer.name",
+          revenue: { $sum: "$totalAmount" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { revenue: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // INVENTORY STATS
+    const inventoryStats = await Inventory.aggregate([
+      { $match: { ownerId, isDeleted: false } },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          totalWeight: { $sum: "$availableWeight" },
+          totalPieces: { $sum: "$availablePieces" },
+        },
+      },
     ]);
 
     res.json({
-      totals: totals[0] || {},
-      monthly,
+      success: true,
+      totals: totals[0] || { revenue: 0, totalWeight: 0, totalPieces: 0, count: 0 },
+      monthly: formattedMonthly,
       categories,
+      customers,
+      inventoryStats,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Analytics failed" });
+    console.error("Analytics error:", err);
+    res.status(500).json({ success: false, message: "Failed to generate analytics" });
   }
 };
 
-// Additional analytics functions can be added here
-export const getMonthlyProfitAnalytics = async (req, res) => {
-  try {
-    const ownerId = new mongoose.Types.ObjectId(req.user.ownerId);
-
-    const data = await Sold.aggregate([
-      { $match: { ownerId } },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$createdAt" },
-            year: { $year: "$createdAt" },
-          },
-          revenue: { $sum: "$price" },
-          cost: { $sum: "$costPrice" },
-          profit: { $sum: "$profit" },
-        },
-      },
-      {
-        $sort: { "_id.year": 1, "_id.month": 1 }
-      }
-    ]);
-
-    res.json(data);
-  } catch (error) {
-    console.error("Monthly profit analytics error:", error);
-    res.status(500).json({ message: "Failed to fetch monthly profit analytics" });
-  }
-};
-
-export const getCategoryProfitAnalytics = async (req, res) => {
-  try {
-    const ownerId = new mongoose.Types.ObjectId(req.user.ownerId);
-
-    const data = await Sold.aggregate([
-      { $match: { ownerId } },
-      {
-        $lookup: {
-          from: "inventories",
-          localField: "inventoryItem",
-          foreignField: "_id",
-          as: "inventoryDetails"
-        }
-      },
-      { $unwind: "$inventoryDetails" },
-      {
-        $lookup: {
-          from: "categories",
-          localField: "inventoryDetails.category",
-          foreignField: "_id",
-          as: "categoryDetails"
-        }
-      },
-      {
-        $group: {
-          _id: { $arrayElemAt: ["$categoryDetails.name", 0] },
-          revenue: { $sum: "$price" },
-          cost: { $sum: "$costPrice" },
-          profit: { $sum: "$profit" },
-          count: { $sum: 1 }
-        }
-      },
-      {
-        $sort: { profit: -1 }
-      }
-    ]);
-
-    res.json(data);
-  } catch (error) {
-    console.error("Category profit analytics error:", error);
-    res.status(500).json({ message: "Failed to fetch category profit analytics" });
-  }
-};
-
-import ExcelJS from "excel";
-
+// ==================== EXPORT ANALYTICS TO EXCEL ====================
 export const exportProfitExcel = async (req, res) => {
   try {
-    const sold = await Sold.find({ ownerId: req.user.ownerId }).populate('inventoryItem');
+    const ownerId = req.user.ownerId;
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Profit Report");
+    const sales = await Sale.find({ ownerId, cancelled: false })
+      .populate({
+        path: "inventoryId",
+        select: "serialNumber category purchaseCode",
+        populate: { path: "category", select: "name" },
+      })
+      .sort({ soldAt: -1 })
+      .lean();
 
-    sheet.columns = [
-      { header: "Date", key: "date", width: 15 },
-      { header: "Item", key: "item", width: 20 },
-      { header: "Revenue", key: "revenue", width: 15 },
-      { header: "Cost", key: "cost", width: 15 },
-      { header: "Profit", key: "profit", width: 15 },
+    const rows = sales.map((s) => ({
+      "Sale Ref": s.saleRef || "-",
+      "Date": s.soldAt ? new Date(s.soldAt).toLocaleDateString("en-IN") : "-",
+      "Serial Number": s.inventoryId?.serialNumber || "-",
+      "Category": s.inventoryId?.category?.name || "-",
+      "Customer": s.customer?.name || "Walk-in",
+      "Total Pieces": s.totalPieces,
+      "Total Weight (ct)": s.totalWeight,
+      "Revenue": s.totalAmount,
+    }));
+
+    const wb = xlsx.utils.book_new();
+    const ws = xlsx.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 22 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+      { wch: 20 }, { wch: 12 }, { wch: 15 }, { wch: 15 },
     ];
+    xlsx.utils.book_append_sheet(wb, ws, "Analytics Report");
+    const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    sold.forEach((s) => {
-      sheet.addRow({
-        date: s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '',
-        item: s.inventoryItem?.serialNumber || s.inventoryItem?._id?.toString() || 'N/A',
-        revenue: s.price,
-        cost: s.costPrice,
-        profit: s.profit,
-      });
-    });
-
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=profit-report.xlsx"
-    );
-    res.setHeader("Content-Type", "application/vnd.openxmlformats");
-
-    await workbook.xlsx.write(res);
-    res.end();
+    res.setHeader("Content-Disposition", "attachment; filename=analytics-report.xlsx");
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.send(Buffer.from(buffer));
   } catch (error) {
-    console.error("Export profit excel error:", error);
-    res.status(500).json({ message: "Failed to export profit report" });
+    console.error("Export analytics error:", error);
+    res.status(500).json({ success: false, message: "Failed to export analytics" });
   }
 };

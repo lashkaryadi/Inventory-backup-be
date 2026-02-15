@@ -8,20 +8,24 @@ const auditLogSchema = new mongoose.Schema(
         "SELL_ITEM",
         "UNDO_SOLD",
         "UPDATE_SOLD",
-        "CREATE_SALE"
+        "CREATE_SALE",
+        "CANCEL_SALE",
+        "RESTORE_ITEM",
+        "PERMANENT_DELETE",
+        "EMPTY_RECYCLE_BIN"
       ],
       required: true,
     },
 
     entityType: {
       type: String,
-      enum: ["inventory", "sold"],
+      enum: ["inventory", "sold", "sale", "category", "recycle_bin"],
       required: true,
     },
 
     entityId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
+      required: false,
     },
 
     performedBy: {

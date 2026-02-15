@@ -1,25 +1,24 @@
-// import express from "express";
-// import { generateInvoice, getInvoiceBySold, createBulkInvoice, getInvoiceById, generateInvoiceFromSold, updateInvoice, lockInvoice, generateBulkInvoice } from "../controllers/invoiceController.js";
-// import {
-//   protect,
-//   preventInvoiceModification,
-// } from "../middleware/authMiddleware.js";
-// import { downloadInvoicePDF } from "../controllers/invoiceController.js";
+import express from "express";
+import {
+  createBulkInvoice,
+  getInvoiceBySaleId,
+  getInvoiceById,
+  downloadInvoicePDF,
+} from "../controllers/invoiceController.js";
+import { protect } from "../middleware/authMiddleware.js";
 
+const router = express.Router();
 
+// Create invoice from selected sales
+router.post("/bulk-create", protect, createBulkInvoice);
 
-// const router = express.Router();
+// Get invoice by sale ID (auto-creates if none exists)
+router.get("/sold/:saleId", protect, getInvoiceBySaleId);
 
-// router.post("/generate", protect, generateInvoice);
-// router.post("/bulk-create", protect, createBulkInvoice);
-// router.post("/from-sold", protect, generateInvoiceFromSold);
-// // ✅ UPDATE - Only if NOT locked
-// router.put("/:id", protect, preventInvoiceModification, updateInvoice);
-// router.post("/:id/lock", protect, lockInvoice);
-// router.post("/bulk", protect, generateBulkInvoice);
-// router.get("/sold/:soldId", protect, getInvoiceBySold);
-// router.get("/:id", protect, getInvoiceById);
-// router.get("/:id/pdf", protect, downloadInvoicePDF);
+// Download invoice as PDF
+router.get("/:id/pdf", protect, downloadInvoicePDF);
 
+// Get invoice by ID
+router.get("/:id", protect, getInvoiceById);
 
-// export default router;
+export default router;
